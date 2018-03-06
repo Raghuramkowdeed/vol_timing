@@ -198,6 +198,7 @@ class VixManager():
           
           for i, this_date in enumerate( self.const_fut_df.index) :
               this_cov = self.const_fut_cov_df.iloc[i,:,:]
+              print(this_cov.shape) 
               this_cov = np.linalg.inv(this_cov)
               carry = self.const_fut_carry_df.loc[this_date]
               
@@ -253,7 +254,7 @@ class VixManager():
               #print(carry.shape)
 
               c = self.const_fut_carry_df.iloc[i,:]
-              A = self.const_fut_beta_df.iloc[i:,:]
+              A = self.const_fut_beta_df.iloc[i:(i+1),:]
               b = [0.0]
 
               x_bounds = (-1, 1)
@@ -263,14 +264,23 @@ class VixManager():
 
                     
               
-              w = res.x      
+              w = -res.x      
               w = pd.Series(w)
               w = w / ( (w.abs()).sum() )
-              print(w)  
+                
+            
+                
+
 
               
               mc = np.sum(np.abs(w))*margin
               adj_w = w/mc
+                
+              this_df = pd.DataFrame()
+              this_df['c'] = self.const_fut_carry_df.iloc[i,:].values
+              this_df['b'] =  self.const_fut_beta_df.iloc[i,:].values
+              this_df['w'] =  adj_w
+              print(this_df)  
               
               if w.isnull().any() :
                   print(this_date)
@@ -315,7 +325,7 @@ class VixManager():
               #print(carry.shape)
 
               c = -self.const_fut_beta_df.iloc[i,:]
-              A = self.const_fut_carry_df.iloc[i:,:]
+              A = self.const_fut_carry_df.iloc[i:(i+1),:]
               b = [0.0]
 
               x_bounds = (-1, 1)
@@ -332,7 +342,14 @@ class VixManager():
               
               mc = np.sum(np.abs(w))*margin
               adj_w = w/mc
-              
+                
+              this_df = pd.DataFrame()
+              this_df['c'] = self.const_fut_carry_df.iloc[i,:].values
+              this_df['b'] =  self.const_fut_beta_df.iloc[i,:].values
+              this_df['w'] =  adj_w
+              print(this_df)   
+            
+            
               if w.isnull().any() :
                   print(this_date)
                   continue
