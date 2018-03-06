@@ -12,6 +12,7 @@ import datetime as dt
 import os
 import dateutil
 
+from scipy.optimize import linprog
 
 def get_expiry(this_date, fut_data_dict, offset = 5):    
     
@@ -143,6 +144,7 @@ class VixManager():
               self.const_fut_df_next = self.const_fut_df_next.append(p2)
 
               carry = get_carry(this_date, p1, self.vix_index, num_fut)
+              carry = -carry
 
               self.const_fut_carry_df = self.const_fut_carry_df.append(carry)
 
@@ -150,22 +152,38 @@ class VixManager():
               
           this_vix_index = self.vix_index.loc[dates]
           
-          self.index_vol = (this_vix_index.pct_change()).ewm(halflife=cov_hl).var()
-
-          self.const_fut_beta_df = ( (self.const_fut_df.pct_change()).ewm(halflife=cov_hl)).cov(this_vix_index.pct_change())
-          self.const_fut_beta_df = self.const_fut_beta_df/self.index_vol
+          index_var = (this_vix_index.pct_change()).ewm(halflife=cov_hl).var()
+          x1 = self.const_fut_df.pct_change()
+          x2 = x1.ewm(halflife=cov_hl)
+          x3 = x2.cov(this_vix_index.pct_change())
+          const_fut_beta_df = x3 
           
+          self.const_fut_beta_df = (const_fut_beta_df.T* ((1/index_var).values) ).T
+          self.index_var = index_var
+            
           self.const_fut_cov_df = ( (self.const_fut_df.pct_change()).ewm(halflife=cov_hl)).cov()
       
-      def get_const_w_ret(self, w ):
+      def get_const_w_ret(self, w, tc = 0.005, margin = 0.5 ):
+          
+          w = pd.Series(w)
+          w = w / ( (w.abs()).sum() )
+          
+          
           pnl_vec = []
+          prev_w = np.zeros(self.const_fut_df.shape[1])
           
           for this_date in self.const_fut_df.index :
               v1 = self.const_fut_df.loc[this_date]
               v2 = self.const_fut_df_next.loc[this_date]
+              mc = np.sum(np.abs(w))*margin
+              adj_w = w/mc
               
               r = (v2-v1)/v1 
-              p = np.dot(r, w)
+              p = np.dot(r, adj_w)
+              
+              t_cost = (adj_w-prev_w).abs().sum()*tc
+              p = p - t_cost
+              prev_w = adj_w
               
               pnl_vec.append( p )
           
@@ -173,17 +191,23 @@ class VixManager():
           pnl_vec = pd.Series(pnl_vec, index = self.const_fut_df.index)
           return pnl_vec
 
-      def get_best_sharpe_w_ret(self):
+      def get_best_sharpe_w_ret(self,  tc = 0.005, margin = 0.3):
           pnl_vec = []
           dates = []
+          prev_w = np.zeros(self.const_fut_df.shape[1])
+          
           for i, this_date in enumerate( self.const_fut_df.index) :
               this_cov = self.const_fut_cov_df.iloc[i,:,:]
               this_cov = np.linalg.inv(this_cov)
               carry = self.const_fut_carry_df.loc[this_date]
               
-              w = np.dot(this_cov, -carry)      
-              w = w / np.sum( np.abs(w) )
+              w = np.dot(this_cov, carry)      
               w = pd.Series(w)
+              w = w / ( (w.abs()).sum() )
+
+              
+              mc = np.sum(np.abs(w))*margin
+              adj_w = w/mc
               
               if w.isnull().any() :
                   print(this_date)
@@ -194,7 +218,13 @@ class VixManager():
               v2 = self.const_fut_df_next.loc[this_date]              
                
               r = (v2-v1)/v1 
-              p = np.dot(r, w)
+              
+      
+              p = np.dot(r, adj_w)
+              t_cost = ( (adj_w-prev_w).abs().sum()*tc )*margin
+              #print(t_cost)
+              p = p - t_cost
+              prev_w = adj_w
 
               pnl_vec.append( p )
               dates.append(this_date)
@@ -202,6 +232,129 @@ class VixManager():
           
           pnl_vec = pd.Series(pnl_vec, index = dates)
           return pnl_vec
+         
+         
+      def get_zero_beta_w_ret(self,  tc = 0.005, margin = 0.3):
+        
+          pnl_vec = []
+          dates = []
+          prev_w = np.zeros(self.const_fut_df.shape[1])
+          
+          for i, this_date in enumerate( self.const_fut_df.index) :
+              if i <= 30 :
+                 continue
+              
+#              this_cov = self.const_fut_cov_df.iloc[i,:,:]
+#              this_cov = np.linalg.inv(this_cov)
+              carry = self.const_fut_carry_df.loc[this_date]
+              beta = self.const_fut_beta_df.loc[this_date]
+              #print(beta.shape)
+              #print(carry.shape)
+
+              c = self.const_fut_carry_df.iloc[-1,:]
+              A = self.const_fut_beta_df.iloc[-1:,:]
+              b = [0.0]
+
+              x_bounds = (-1, 1)
+
+              res = linprog(c, A_eq=A, b_eq=b, bounds=(x_bounds),
+                    options={"disp": False})
+
+                    
+              
+              w = res.x      
+              w = pd.Series(w)
+              w = w / ( (w.abs()).sum() )
+
+              
+              mc = np.sum(np.abs(w))*margin
+              adj_w = w/mc
+              
+              if w.isnull().any() :
+                  print(this_date)
+                  continue
+                            
+              
+              v1 = self.const_fut_df.loc[this_date]
+              v2 = self.const_fut_df_next.loc[this_date]              
+               
+              r = (v2-v1)/v1 
+              
+      
+              p = np.dot(r, adj_w)
+              t_cost = ( (adj_w-prev_w).abs().sum()*tc )*margin
+              #print(t_cost)
+              p = p - t_cost
+              prev_w = adj_w
+
+              pnl_vec.append( p )
+              dates.append(this_date)
+          
+          
+          pnl_vec = pd.Series(pnl_vec, index = dates)
+          return pnl_vec
+         
+
+      def get_zero_carry_w_ret(self,  tc = 0.005, margin = 0.3):
+        
+          pnl_vec = []
+          dates = []
+          prev_w = np.zeros(self.const_fut_df.shape[1])
+          
+          for i, this_date in enumerate( self.const_fut_df.index) :
+              if i <= 30 :
+                 continue
+              
+#              this_cov = self.const_fut_cov_df.iloc[i,:,:]
+#              this_cov = np.linalg.inv(this_cov)
+              carry = self.const_fut_carry_df.loc[this_date]
+              beta = self.const_fut_beta_df.loc[this_date]
+              #print(beta.shape)
+              #print(carry.shape)
+
+              c = -self.const_fut_beta_df.iloc[-1,:]
+              A = self.const_fut_carry_df.iloc[-1:,:]
+              b = [0.0]
+
+              x_bounds = (-1, 1)
+
+              res = linprog(c, A_eq=A, b_eq=b, bounds=(x_bounds),
+                    options={"disp": False})
+
+                    
+              
+              w = -res.x      
+              w = pd.Series(w)
+              w = w / ( (w.abs()).sum() )
+
+              
+              mc = np.sum(np.abs(w))*margin
+              adj_w = w/mc
+              
+              if w.isnull().any() :
+                  print(this_date)
+                  continue
+                            
+              
+              v1 = self.const_fut_df.loc[this_date]
+              v2 = self.const_fut_df_next.loc[this_date]              
+               
+              r = (v2-v1)/v1 
+              
+      
+              p = np.dot(r, adj_w)
+              t_cost = ( (adj_w-prev_w).abs().sum()*tc )*margin
+              #print(t_cost)
+              p = p - t_cost
+              prev_w = adj_w
+
+              pnl_vec.append( p )
+              dates.append(this_date)
+          
+          
+          pnl_vec = pd.Series(pnl_vec, index = dates)
+          return pnl_vec
+        
          
      
           
