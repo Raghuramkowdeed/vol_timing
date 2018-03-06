@@ -197,6 +197,8 @@ class VixManager():
           prev_w = np.zeros(self.const_fut_df.shape[1])
           
           for i, this_date in enumerate( self.const_fut_df.index) :
+              if i <= 30 :
+                 continue  
               this_cov = self.const_fut_cov_df.iloc[i,:,:]
               print(this_cov.shape) 
               this_cov = np.linalg.inv(this_cov)
