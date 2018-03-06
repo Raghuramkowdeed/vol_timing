@@ -204,6 +204,7 @@ class VixManager():
               w = np.dot(this_cov, carry)      
               w = pd.Series(w)
               w = w / ( (w.abs()).sum() )
+              print(w)
 
               
               mc = np.sum(np.abs(w))*margin
@@ -251,8 +252,8 @@ class VixManager():
               #print(beta.shape)
               #print(carry.shape)
 
-              c = self.const_fut_carry_df.iloc[-1,:]
-              A = self.const_fut_beta_df.iloc[-1:,:]
+              c = self.const_fut_carry_df.iloc[i,:]
+              A = self.const_fut_beta_df.iloc[i:,:]
               b = [0.0]
 
               x_bounds = (-1, 1)
@@ -265,6 +266,7 @@ class VixManager():
               w = res.x      
               w = pd.Series(w)
               w = w / ( (w.abs()).sum() )
+              print(w)  
 
               
               mc = np.sum(np.abs(w))*margin
@@ -312,8 +314,8 @@ class VixManager():
               #print(beta.shape)
               #print(carry.shape)
 
-              c = -self.const_fut_beta_df.iloc[-1,:]
-              A = self.const_fut_carry_df.iloc[-1:,:]
+              c = -self.const_fut_beta_df.iloc[i,:]
+              A = self.const_fut_carry_df.iloc[i:,:]
               b = [0.0]
 
               x_bounds = (-1, 1)
@@ -326,7 +328,7 @@ class VixManager():
               w = -res.x      
               w = pd.Series(w)
               w = w / ( (w.abs()).sum() )
-
+              print(w)
               
               mc = np.sum(np.abs(w))*margin
               adj_w = w/mc
